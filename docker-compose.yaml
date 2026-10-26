@@ -1,6 +1,6 @@
 services:
   metatube:
-    image: ghcr.io/metatube-community/metatube-server:latest
+    image: ghcr.io/seanashe/metatube-server:dev
     container_name: metatube
     ports:
       - "8080:8080"

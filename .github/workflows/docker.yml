@@ -11,6 +11,10 @@ on:
     tags:
       - '*'
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
 
   build:
@@ -44,6 +48,8 @@ jobs:
         id: shell
         run: |
           echo "version=$(git describe --abbrev=0 --tags HEAD | cut -d'v' -f 2)" >> $GITHUB_OUTPUT
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${owner}/metatube-server" >> $GITHUB_OUTPUT
 
       - name: Build and Push (dev)
         if: github.ref == 'refs/heads/main'
@@ -54,7 +60,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/metatube-community/metatube-server:dev
+            ${{ steps.shell.outputs.image }}:dev
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -67,7 +73,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/metatube-community/metatube-server:latest
-            ghcr.io/metatube-community/metatube-server:${{ steps.shell.outputs.version }}
+            ${{ steps.shell.outputs.image }}:latest
+            ${{ steps.shell.outputs.image }}:${{ steps.shell.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
