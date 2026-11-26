@@ -1,6 +1,7 @@
-package nextjs
+package rsc
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -25,39 +26,36 @@ const samplePayload = "1:\"$Sreact.fragment\"\n" +
 	"6:[\"$\",\"main\",null,{\"children\":[[\"$\",\"$L2\",null,{\"src\":\"https://example.com/a.m3u8\"," +
 	"\"poster\":\"https://example.com/a.jpg\",\"movieSeq\":1}]]}]\n"
 
-func TestExtractPayload(t *testing.T) {
-	payload, err := ExtractPayload([]byte(samplePage))
+func TestExtractNextPayload(t *testing.T) {
+	payload, err := ExtractNextPayload([]byte(samplePage))
 	require.NoError(t, err)
 	assert.Equal(t, samplePayload, payload)
 
-	payload, err = ExtractPayload([]byte(`<html></html>`))
+	payload, err = ExtractNextPayload([]byte(`<html></html>`))
 	require.NoError(t, err)
 	assert.Empty(t, payload)
 
-	_, err = ExtractPayload([]byte(`<script>self.__next_f.push(</script>`))
+	_, err = ExtractNextPayload([]byte(`<script>self.__next_f.push(</script>`))
 	assert.Error(t, err)
 
 	// Binary chunks are base64-decoded.
-	payload, err = ExtractPayload([]byte(`<script>self.__next_f.push([1,"0:[\"a"])</script>` +
+	payload, err = ExtractNextPayload([]byte(`<script>self.__next_f.push([1,"0:[\"a"])</script>` +
 		`<script>self.__next_f.push([3,"YmM="])</script>` +
 		`<script>self.__next_f.push([1,"\"]\n"])</script>`))
 	require.NoError(t, err)
 	assert.Equal(t, "0:[\"abc\"]\n", payload)
 }
 
-func TestExtractPayloadTimeout(t *testing.T) {
-	defer func(d time.Duration) { scriptTimeout = d }(scriptTimeout)
-	scriptTimeout = 100 * time.Millisecond
-
-	_, err := ExtractPayload([]byte(`<script>self.__next_f; while (true) {}</script>`))
-	assert.ErrorIs(t, err, errScriptTimeout)
+func TestExtractNextPayloadTimeout(t *testing.T) {
+	_, err := ExtractNextPayload([]byte(`<script>self.__next_f; while (true) {}</script>`))
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestFindObject(t *testing.T) {
 	type player struct {
 		Src      string `json:"src"`
 		Poster   string `json:"poster"`
-		MovieSeq int    // untagged, matched case-insensitively.
+		MovieSeq int    // untagged
 		Title    string `json:"title"` // not in the payloads.
 	}
 
@@ -72,12 +70,12 @@ func TestFindObject(t *testing.T) {
 		MovieSeq: 1,
 	}, find(samplePayload))
 
-	// Objects without any field of the struct never match, even with keys.
+	// Objects without any field of v never match.
 	var unknown struct{ Foo string }
 	assert.False(t, FindObject(samplePayload, &unknown))
 	assert.False(t, FindObject(samplePayload, &unknown, "src"))
 
-	// The second object matches more fields than the first one.
+	// The second object matches more fields.
 	const payload = `0:[{"src":"a.jpg","alt":"a"},{"src":"b.m3u8","poster":"b.jpg","movieseq":2}]` + "\n"
 	assert.Equal(t, player{Src: "b.m3u8", Poster: "b.jpg", MovieSeq: 2}, find(payload))
 
@@ -85,14 +83,13 @@ func TestFindObject(t *testing.T) {
 	assert.Equal(t, player{Src: "a.jpg"}, find(payload, "alt"))
 	assert.False(t, FindObject(payload, new(player), "missing"))
 
-	// A map has no fields to match, so keys are required.
+	// A map has no fields, so keys are required.
 	var m map[string]any
 	assert.False(t, FindObject(payload, &m))
 	require.True(t, FindObject(payload, &m, "poster"))
 	assert.Equal(t, "b.m3u8", m["src"])
 
-	// Length-prefixed rows are skipped by their length, even if they contain
-	// newlines.
+	// Length-prefixed rows are skipped, even with newlines.
 	const text = "a\n7:{\"src\":\"fake\"}\n"
 	assert.Equal(t, player{Src: "real"},
 		find(fmt.Sprintf("5:T%x,%s6:{\"src\":\"real\"}\n", len(text), text)))
@@ -102,8 +99,7 @@ func TestFindObject(t *testing.T) {
 	assert.Equal(t, player{Src: "a", Poster: "b"},
 		find(`0:{"src":"x","SRC":"y"}`+"\n"+`1:{"src":"a","poster":"b"}`+"\n"))
 
-	// v is left untouched if the best object cannot be unmarshaled into it,
-	// e.g., a field holding a reference to another row.
+	// v is left untouched on failure.
 	var tagged struct {
 		Src  string   `json:"src"`
 		Tags []string `json:"tags"`
@@ -113,7 +109,7 @@ func TestFindObject(t *testing.T) {
 	assert.Equal(t, "untouched", tagged.Src)
 	assert.Nil(t, tagged.Tags)
 
-	// The object is merged into v, keeping defaults it does not have.
+	// The object is merged into v.
 	merged := player{Title: "default"}
 	require.True(t, FindObject(`0:{"src":"a","poster":"b"}`+"\n", &merged))
 	assert.Equal(t, player{Src: "a", Poster: "b", Title: "default"}, merged)

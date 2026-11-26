@@ -1,4 +1,4 @@
-package nextjs
+package rsc
 
 import (
 	"embed"
@@ -27,7 +27,6 @@ func TestTestdataTestSuite(t *testing.T) {
 	suite.Run(t, new(TestdataTestSuite))
 }
 
-// SetupSuite extracts the RSC payload of every page in testdata.
 func (s *TestdataTestSuite) SetupSuite() {
 	entries, err := testdata.ReadDir("testdata")
 	s.Require().NoError(err)
@@ -38,7 +37,7 @@ func (s *TestdataTestSuite) SetupSuite() {
 		s.Require().NoError(err)
 		page, err := base64.StdEncoding.DecodeString(string(data))
 		s.Require().NoError(err, entry.Name())
-		payload, err := ExtractPayload(page)
+		payload, err := ExtractNextPayload(page)
 		s.Require().NoError(err, entry.Name())
 		s.Require().NotEmpty(payload, entry.Name())
 		s.payloads[entry.Name()] = payload
@@ -48,7 +47,7 @@ func (s *TestdataTestSuite) SetupSuite() {
 func (s *TestdataTestSuite) TestFindObject() {
 	for _, unit := range []struct {
 		filename string
-		want     any // struct value to find, matched by its fields.
+		want     any // struct value to find
 	}{
 		{
 			// https://www.heyzo.com/movie/3986

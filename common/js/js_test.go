@@ -1,8 +1,12 @@
 package js
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/robertkrimen/otto"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,4 +49,48 @@ func TestUnmarshalObject(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "hello", data)
 	}
+}
+
+func TestUnmarshalObjectTimeout(t *testing.T) {
+	var v any
+	assert.ErrorIs(t, UnmarshalObject(`while (true) {}`, "", &v), context.DeadlineExceeded)
+}
+
+func TestRunVM(t *testing.T) {
+	var n int64
+	err := RunVM(context.Background(), func(vm *otto.Otto) error {
+		v, err := vm.Run(`1 + 2`)
+		if err != nil {
+			return err
+		}
+		n, err = v.ToInteger()
+		return err
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), n)
+
+	// Errors of fn are returned as is.
+	errFn := errors.New("fn")
+	assert.ErrorIs(t, RunVM(context.Background(), func(*otto.Otto) error { return errFn }), errFn)
+
+	// Scripts are interrupted once ctx is done.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = RunVM(ctx, func(vm *otto.Otto) error {
+		_, err := vm.Run(`while (true) {}`)
+		return err
+	})
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	ctx, cancel = context.WithCancel(context.Background())
+	cancel()
+	err = RunVM(ctx, func(vm *otto.Otto) error {
+		_, err := vm.Run(`while (true) {}`)
+		return err
+	})
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Other panics are returned as errors.
+	err = RunVM(context.Background(), func(*otto.Otto) error { panic("boom") })
+	assert.EqualError(t, err, "js: script panicked: boom")
 }
