@@ -1,4 +1,4 @@
-name: "CodeQL"
+name: CodeQL
 
 concurrency:
   group: codeql-${{ github.event_name }}-${{ github.ref }}
@@ -6,8 +6,18 @@ concurrency:
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    paths-ignore: &paths-ignore
+      - '**.md'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
+    paths-ignore: *paths-ignore
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
 
 jobs:
   analyze:
@@ -17,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'go' ]
+        language: ['go']
 
     steps:
       - name: Checkout repository
